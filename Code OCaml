@@ -1,0 +1,229 @@
+(*Définition des types*)
+
+type sgn = (*Semigroupe numérique*)
+  { g : int (*Genre*)
+  ; m : int (*Multiplicité*)
+  ; c : int (*Conducteur*)
+  ; irr : int array (*Ensemble des irréductibles*)
+  }
+;;
+
+type vect_sgn = int array ;; (*Caractérisation par un vecteur*)
+
+type arbre =
+| F of sgn
+| N of sgn * arbre list
+;;
+
+exception Trouve
+let n = int_of_string Sys.argv.(1) ;;
+let f = Sys.argv.(2)
+let gg = n ;;
+
+(*Fonctions permettant de passer du vecteur au semigroupe numérique associé.*)
+
+let genre vect =
+  let n = Array.length vect in
+  let compteur = ref 0 in
+  for i=0 to n-1 do
+    if vect.(i) = 0 then compteur := !compteur + 1
+  done;
+  !compteur
+;;
+
+let multiplicite vect =
+  let n = Array.length vect in
+  let rec aux i =
+    if i >= n then failwith "Ce cas ne devrait pas arriver." else
+    if vect.(i) > 0 then i else aux (i+1)
+  in aux 1
+;;
+
+let conducteur vect =
+  let n = Array.length vect in
+  let rec aux i =
+    if i <= 1 then failwith "Ce cas ne devrait pas arriver." else
+    if vect.(i-1) = 0 then i else aux (i-1)
+  in aux n
+;;
+
+let irreductibles vect =
+  let n = Array.length vect in
+  let compteur = ref 0 in
+  for i=1 to n-1 do
+    if vect.(i) = 1 then compteur := 1 + !compteur
+    done;
+  let tab = Array.make !compteur 0 in
+  for i=n-1 downto 1 do
+    if vect.(i) = 1 then (compteur := !compteur - 1 ; tab.(!compteur) <- i)
+  done;
+  tab
+;;
+
+let vect_to_sgn delta =
+  { g = genre delta
+  ; m = multiplicite delta
+  ; c = conducteur delta
+  ; irr = irreductibles delta
+  }
+;;
+
+(*Fonctions permettant de passer du semigroupe numérique au vecteur associé.*)
+
+let rec appartient s x =
+  if Array.mem x s.irr || x = 0 then true else 
+    try
+      for i=0 to Array.length s.irr - 1 do
+        if x >= s.irr.(i) && appartient s (x-s.irr.(i)) then raise Trouve
+      done;
+      false
+    with
+    | Trouve -> true
+;;
+
+let degre_decomposition s x =
+  if not (appartient s x) then 0 else
+  if Array.mem x s.irr then 1 else
+  let compteur = ref 0 in
+  for y=0 to x/2 do
+    if appartient s y && appartient s (x - y) then compteur := !compteur + 1
+  done;
+  !compteur
+;;
+
+let sgn_to_vect s =
+  let delta = Array.make (3*gg + 1) (-1) in
+  delta.(0) <- 1 ;
+  for i=1 to 3*gg do
+    delta.(i) <- degre_decomposition s i
+  done;
+  delta
+;;
+
+(*Construction de l'arbre des semigroupes numériques*)
+
+let enlever s x =
+  let vect_s' = sgn_to_vect s in
+  for y=(Array.length vect_s' - 1) downto x do
+    if vect_s'.(y - x) > 0 then vect_s'.(y) <- vect_s'.(y) - 1
+  done;
+  vect_to_sgn vect_s'
+;;
+
+let fils s =
+  let liste = ref [] in
+  for i=0 to Array.length s.irr - 1 do
+    if s.irr.(i) >= s.c then liste := (enlever s s.irr.(i)) :: !liste
+  done;
+  !liste
+;;
+
+let construire_arbre n =
+  let s0 = {g = 0 ; m = 1 ; c = 0 ; irr = [|1|]} in
+  let rec aux n s =
+    if n = 0 then F s else
+      N (s, List.map (aux (n-1)) (fils s))
+  in aux n s0
+;; 
+
+(*Compte du nombre de semigroupe numérique de genre g*)
+
+let compter_sgn_n n =
+  let arbre = construire_arbre n in
+  let compteur = ref 0 in
+  let rec aux a =
+    match a with
+    | F s -> if s.g = n then compteur := !compteur + 1
+    | N (_, l) -> List.iter aux l
+  in aux arbre ; !compteur
+;; 
+
+let compter_sgn_to_n n =
+  let arbre = construire_arbre n in
+  let ng = Array.make (n+1) 0 in
+  let rec aux a =
+    match a with
+    | F s -> ng.(s.g) <- ng.(s.g) + 1
+    | N (s, l) -> ng.(s.g) <- ng.(s.g) + 1 ; List.iter aux l
+  in aux arbre ; ng
+;;
+
+(*Analyse du temps d'exécution*)
+
+let temps n =
+  let tab_temps = Array.make (n+1) (-1.) in
+  for i=0 to n do
+    let time_init = Unix.gettimeofday () in
+    let _ = compter_sgn_to_n i in
+    tab_temps.(i) <- (Unix.gettimeofday () -. time_init)
+  done;
+  tab_temps
+;;
+
+let exporter fichier tableau =
+  let f_out = open_out fichier in
+  output_string f_out ((string_of_int n) ^ "\n") ;
+  for i=0 to Array.length tableau - 1 do
+    output_string f_out ((string_of_float (tableau.(i))) ^ "\n")
+  done;
+  close_out f_out
+;;
+
+(*Fonctions d'affichage*)
+
+open Printf
+
+let print_vect vect =
+  let n = Array.length vect in
+  printf "(" ;
+  for i=0 to n-2 do
+    printf "%d, " vect.(i)
+  done;
+  printf "%d)\n" vect.(n-1)
+;;
+
+let print_int_array tab =
+  let n = Array.length tab in
+  printf "[" ;
+  for i=0 to n-2 do
+    printf "%d, " tab.(i)
+  done;
+  printf "%d]\n" tab.(n-1)
+;;
+
+let print_sgn s =
+  printf "Genre : %d ; Multiplicité : %d ; Conducteur : %d ; Irréductibles : " s.g s.m s.c ;
+  print_int_array s.irr
+;;
+
+let rec print_sgn_list l =
+  match l with
+  | [] -> ()
+  | x :: y -> print_sgn x ; print_sgn_list y
+;;
+
+let rec print_arbre a =
+  match a with
+  | F s -> printf "F : " ; print_sgn s
+  | N (s, l) -> printf "N : " ; print_sgn s ; printf "L : (" ; List.iter (fun b -> print_arbre b) l ; printf ")\n"
+;;
+
+let solution_finale n =
+  let tab = compter_sgn_to_n n in
+  for i=0 to n do
+    if i < 10 then printf "%d    %d\n" i tab.(i) else printf "%d   %d\n" i tab.(i)
+  done;
+;;
+
+let print_temps n =
+  let tab_temps = temps n in
+  for i=0 to n do
+    if i < 10 then printf "n = %d :  %f\n" i tab_temps.(i) else printf "n = %d : %f\n" i tab_temps.(i)
+  done;
+;;
+
+(*Tests*)
+
+let temps_init = Unix.gettimeofday () in
+let _ = compter_sgn_to_n n in
+printf "Pour n = %d : %f\n" n (Unix.gettimeofday () -. temps_init)
